@@ -2,10 +2,14 @@
 #include<stdlib.h>
 #include<math.h>
 
-#define __READFILE_MESH_MODE_POINT 0
-#define __READFILE_MESH_MODE_LINE 1
-#define __READFILE_MESH_MODE_TRIANGLE 4
-#define __READFILE_MESH_PRECISION 8//4294967295 //2 ^ (8 * sizeof(unsigned int)) - 1
+#define __GE_MESH_MODE_POINT 0                  //0000 0000
+#define __GE_MESH_MODE_LINE 1                   //0000 0001
+#define __GE_MESH_MODE_TRIANGLE 4               //0000 0002
+#define __GE_MESH_TEXTURE_ENABLE 2147483648     //8000 0000
+#define __GE_MESH_TEXTURE_DISABLE 0             //0000 0000
+#define __GE_MESH_PRECISION 2147483648          //8000 0000
+                                                //2 ^ (8 * sizeof(unsigned int))
+#define __GE_MESH_HEADER_SIZE 6                 //size of the header in the file
 
 class geBufferf {
 public:
@@ -18,6 +22,8 @@ public:
     unsigned int* buf;
     geBufferui() {}
 };
+
+//read -----------------------------------------
 
 char* readfile(const char *file) {
     FILE *fptr;
@@ -44,7 +50,7 @@ char* readfile(const char *file) {
     return buf;
 }
 
-unsigned int *readmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuffer) {
+unsigned int *gereadmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuffer) {
     //variables
     FILE *fptr;
     unsigned int *buf;
@@ -96,10 +102,10 @@ unsigned int *readmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuf
     vbuffer->buf = (float*)malloc(vlen * vdim * sizeof(float));
     cbuffer->buf = (float*)malloc(clen * cdim * sizeof(float));
     for(int i = 0; i < vlen * vdim; i++) {
-        vbuffer->buf[i] = ((((float)buf[i]) / __READFILE_MESH_PRECISION) * 2) - 1;
+        vbuffer->buf[i] = ((((float)buf[i]) / __GE_MESH_PRECISION) * 2) - 1;
     }
     for(int i = 0; i < clen * cdim; i++) {
-        cbuffer->buf[i] = (((float)buf[i + (vlen * vdim)]) / __READFILE_MESH_PRECISION);
+        cbuffer->buf[i] = (((float)buf[i + (vlen * vdim)]) / __GE_MESH_PRECISION);
     }
     
     //close file and return buffer
@@ -107,145 +113,122 @@ unsigned int *readmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuf
     return args;
 }
 
-bool writemeshfile(const char *file, unsigned int mode, unsigned int vlen, unsigned int vdim, 
-    unsigned int clen, unsigned int cdim, geBufferf buffer) {
+//write ----------------------------------------
+
+bool gewritemeshfile(const char* file, const char* texturepath, unsigned int vertexmode,
+    unsigned int drawmode, unsigned int vlen, unsigned int vdim, 
+    unsigned int clen, unsigned int cdim, geBufferf vbufferin,
+    geBufferf cbufferin, geBufferf indexbufferin) {
+
+    //variables
+    geBufferf bufferout;
+    unsigned int fulllength = 0;
+    unsigned int indexbuffersize = 0;
+    unsigned int vertexbuffersize = 0;
+    unsigned int texturebuffersize = 0;
+    bool textureenabled = false;
+    bool indexbufferenabled = false;
+
+    printf("Writing file... \n");
+    printf("\tCollecting data... ");
+
+    //math
+    if(vertexmode >= __GE_MESH_TEXTURE_ENABLE) {
+        textureenabled = true;
+    }
+    if (textureenabled) {
+        indexbuffersize = vertexmode - __GE_MESH_TEXTURE_ENABLE;
+        if (vertexmode != __GE_MESH_TEXTURE_ENABLE)
+        {
+            indexbufferenabled = true;
+        }
+    } else {
+        indexbuffersize = vertexmode - __GE_MESH_TEXTURE_DISABLE;
+        if (vertexmode != __GE_MESH_TEXTURE_DISABLE)
+        {
+            indexbufferenabled = true;
+        }
+    }
+    vertexbuffersize = (vlen * vdim);
+    texturebuffersize = (clen * cdim);
+    if(textureenabled) {
+        texturebuffersize = texturebuffersize * 4;
+    }
+    fulllength = vertexbuffersize + texturebuffersize + indexbuffersize;
+
+    //allocate buffer
+    bufferout.buf = (float*)malloc(sizeof(float) * fulllength);
+
+    //do math
+    for(int i = 0; i < indexbuffersize; i++) {
+        bufferout.buf[i] = indexbufferin.buf[i];
+    }
+    for(int i = 0; i < vertexbuffersize; i++) {
+        bufferout.buf[i + indexbuffersize] = vbufferin.buf[i];
+    }
+    for(int i = 0; i < texturebuffersize; i++) {
+        bufferout.buf[i + indexbuffersize + vertexbuffersize] = cbufferin.buf[i];
+    }
+
+    printf("done! \n");
+
+    // ===================================== WRITE ===============================================
+
+    printf("\tConverting data... ");
+
+    //variables
+    geBufferui header;
+    geBufferui fulldata;
+    geBufferui filebuffer;
+
+    //write header buffer
+    header.buf = (unsigned int*)malloc(sizeof(unsigned int) * __GE_MESH_HEADER_SIZE);
+    header.buf[0] = vertexmode;
+    header.buf[1] = drawmode;
+    header.buf[2] = vlen;
+    header.buf[3] = vdim;
+    header.buf[4] = clen;
+    header.buf[5] = cdim;
+
+    //convert data from float to unsigned int
+    for(int i = 0; i < fulllength; i++) {
+        fulldata.buf[i] = (unsigned int)floor(
+                ((bufferout.buf[i] + 1) / 2 ) * __GE_MESH_PRECISION);
+    }
+
+    //merge header and data
+    for(int i = 0; i < __GE_MESH_HEADER_SIZE; i++) {
+        filebuffer.buf[i] = header.buf[i];
+    }
+    for(int i = 0; i < fulllength; i++) {
+        filebuffer.buf[i + __GE_MESH_HEADER_SIZE] = fulldata.buf[i];
+    }
+
+    printf("done! \n");
+
+    // ===================================== WRITE TO FILE ========================================
+
+    printf("\tWriting to file: \"%s\" ... ", file);
 
     //variables
     FILE *fptr;
-    unsigned int* buf; //4-Byte-Integer
-    unsigned int* hbuf;
-
-    //calculate header data
-    unsigned int hlength = 6;
-    unsigned int length;
-    length = (vlen * vdim) + (clen * cdim);
-
-    //allocate buffer
-    buf = (unsigned int*)malloc(sizeof(unsigned int) * length);
-    for(int i = 0; i < vlen * vdim; i++) {
-        buf[i] =
-        (unsigned int)floor((buffer.buf[i] + 1) / 2 * __READFILE_MESH_PRECISION);
-    } for(int i = 0; i < clen * cdim; i++) {
-        buf[i + (vlen * vdim)] = 
-        (unsigned int)floor(buffer.buf[i + (vlen * vdim)] * __READFILE_MESH_PRECISION);
-    }
 
     //open file
     fptr = fopen(file, "wb");
-    if (!fptr) {
-        return NULL;
-    }
-    fseek(fptr, 0, SEEK_SET);
-
-    //make header
-    hbuf = (unsigned int*)malloc(6 * sizeof(int));
-    hbuf[0] = (unsigned int)hlength;
-    hbuf[1] = mode;
-    hbuf[2] = vlen;
-    hbuf[3] = vdim;
-    hbuf[4] = clen;
-    hbuf[5] = cdim;
-
-    //write data
-    fseek(fptr, 0, SEEK_SET);
-    fwrite(hbuf, sizeof(unsigned int), hlength, fptr);
-    fwrite(buf, sizeof(unsigned int), length, fptr);
-
-    //close file
-    fclose(fptr);    
-}
-
-bool writemeshfile(const char *file, unsigned int mode, unsigned int vlen, unsigned int clen,
-    unsigned int vdim, unsigned int cdim, geBufferf vbuffer, geBufferf cbuffer) {
-
-    //variables
-    FILE *fptr;
-    unsigned int* buf; //4-Byte-Integer
-    unsigned int* hbuf;
-
-    //calculate header data
-    unsigned int hlength = 6;
-    unsigned int length;
-    length = (vlen * vdim) + (clen * cdim);
-
-    //allocate buffer
-    buf = (unsigned int*)malloc(sizeof(unsigned int) * length);
-
-    //write to buffer
-    for(int i = 0; i < vlen * vdim; i++) {
-        buf[i] = (unsigned int)floor((vbuffer.buf[i] + 1) / 2 * __READFILE_MESH_PRECISION);
-    } for(int i = 0; i < clen * cdim; i++) {
-        buf[i + (vlen * vdim)] = (unsigned int)floor((cbuffer.buf[i] + 1) / 2 * __READFILE_MESH_PRECISION);
+    if(fptr == NULL) {
+        return false;
     }
 
-    //open file
-    fptr = fopen(file, "wb");
-    if (!fptr) {
-        return NULL;
-    }
+    //write to file
     fseek(fptr, 0, SEEK_SET);
+    fwrite(filebuffer.buf, sizeof(unsigned int), fulllength + __GE_MESH_HEADER_SIZE, fptr);
 
-    //make header
-    hbuf = (unsigned int*)malloc(6 * sizeof(int));
-    hbuf[0] = (unsigned int)hlength;
-    hbuf[1] = mode;
-    hbuf[2] = vlen;
-    hbuf[3] = clen;
-    hbuf[4] = vdim;
-    hbuf[5] = cdim;
+    //close file  
+    fclose(fptr);
 
-    //write data
-    fseek(fptr, 0, SEEK_SET);
-    fwrite(hbuf, 4, hlength, fptr);
-    fwrite(buf, 4, length, fptr);
+    printf("done! \n");
 
-    //close file
-    fclose(fptr);    
-}
+    printf("\tSuccess!\n");
 
-bool writemeshfile(const char *file, unsigned int args[], geBufferf buffer) {
-    //variables
-    FILE *fptr;
-    unsigned int* buf; //4-Byte-Integer
-    unsigned int* hbuf;
-
-    //calculate header data
-    unsigned int hlength = args[0];
-    unsigned int mode = args[1];
-    unsigned int vlen = args[2];
-    unsigned int clen = args[3];
-    unsigned int vdim = args[4];
-    unsigned int cdim = args[5];
-    int length;
-    length = (vlen * vdim) + (clen * cdim);
-
-    //allocate buffer
-    buf = (unsigned int*)malloc(sizeof(unsigned int) * length);
-
-    for(int i = 0; i < length; i++) {
-        buf[i] = (unsigned int)floor((buffer.buf[i] + 1) / 2 * __READFILE_MESH_PRECISION);
-    }
-
-    //open file
-    fptr = fopen(file, "wb");
-    if (!fptr) {
-        return NULL;
-    }
-    fseek(fptr, 0, SEEK_SET);
-
-    //make header
-    hbuf = (unsigned int*)malloc(6 * sizeof(int));
-    hbuf[0] = hlength;
-    hbuf[1] = mode;
-    hbuf[2] = vlen;
-    hbuf[3] = clen;
-    hbuf[4] = vdim;
-    hbuf[5] = cdim;
-
-    //write data
-    fwrite(hbuf, 4, hlength, fptr);
-    fwrite(buf, 4, length, fptr);
-
-    //close file
-    fclose(fptr);    
+    return true;
 }

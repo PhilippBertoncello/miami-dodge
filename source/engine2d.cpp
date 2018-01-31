@@ -12,7 +12,7 @@
 
 GLuint _maxShaderCompilerLogLength = 512;
 
-namespace shaderCompiler {
+namespace geShaderCompiler {
 	GLuint makeVertexShader(const char* source) {
 		GLuint out;
 		int length;
@@ -91,7 +91,7 @@ public:
 	Transform transform;
 };
 
-class Mesh {
+class geMesh {
 public:
 	GLuint vaoID;
 	GLuint vboID;
@@ -111,7 +111,7 @@ public:
 	bool initialized;
 	bool loaded;
 
-	Mesh() {
+	geMesh() {
 		vertexdatasize = 0;
 		colordatasize = 0;
 		initialized = false;
@@ -122,9 +122,9 @@ public:
 		//Shader stuff
 		GLuint vertexShaderID;
 		GLuint fragmentShaderID;
-		vertexShaderID = shaderCompiler::makeVertexShader(readfile(vertexpath));
-		fragmentShaderID = shaderCompiler::makeFragmentShader(readfile(fragmentpath));
-		shaderID = shaderCompiler::makeShaderProgram(vertexShaderID, fragmentShaderID);
+		vertexShaderID = geShaderCompiler::makeVertexShader(readfile(vertexpath));
+		fragmentShaderID = geShaderCompiler::makeFragmentShader(readfile(fragmentpath));
+		shaderID = geShaderCompiler::makeShaderProgram(vertexShaderID, fragmentShaderID);
 
 		//Make VBO and VAO and fill VBO with data
 		glGenVertexArrays(1, &vaoID);
@@ -198,7 +198,7 @@ public:
 		unsigned int *args;
 		geBufferf vdata;
 		geBufferf cdata;
-		args = readmeshfile(path, &vdata, &cdata);
+		args = gereadmeshfile(path, &vdata, &cdata);
 		GLenum modeIn = args[1];
 		unsigned int vlen = args[2] * args[3];
 		unsigned int clen = args[4] * args[5];
@@ -241,7 +241,7 @@ public:
 	}
 };
 
-using namespace shaderCompiler;
+using namespace geShaderCompiler;
 
 void onDraw();
 void onKeyboard(unsigned char c, int x, int y);

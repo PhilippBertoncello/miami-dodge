@@ -2,3 +2,6 @@ mesh:
 	implementieren:
 		mesh-editor
 		spiel programmieren
+
+	WICHTIG:
+		nuin leser fir .mesh einbaun!
