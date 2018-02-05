@@ -1,6 +1,69 @@
 // DONT COMPILE THIS CODE; THIS IS JUST A BACKUP OF OLD CODE!
 
 namespace readfile {
+	unsigned int *gereadmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuffer) {
+	    //variables
+	    FILE *fptr;
+	    unsigned int *buf;
+	    float *bufout;
+	    long flength;
+	    long length;
+	    unsigned int *args;
+	    args = (unsigned int*)malloc(6 * sizeof(unsigned int));
+
+	    //header variables
+	    unsigned int hlength = 6;
+	    unsigned int mode;
+	    unsigned int vlen;
+	    unsigned int clen;
+	    unsigned int vdim;
+	    unsigned int cdim;
+	    unsigned int *hbuf;
+
+	    //open file
+	    fptr = fopen(file, "rb");
+	    if (!fptr) {
+	        return NULL;
+	    }
+	    fseek(fptr, 0, SEEK_END); 
+	    flength = ftell(fptr);
+
+	    //read header
+	    fseek(fptr, 0, SEEK_SET);
+	    hbuf = (unsigned int*)malloc(hlength * sizeof(unsigned int));
+	    fread(hbuf, sizeof(unsigned int), hlength, fptr);
+	    hlength = hbuf[0];
+	    mode = hbuf[1];
+	    vlen = hbuf[2];
+	    vdim = hbuf[3];
+	    clen = hbuf[4];
+	    cdim = hbuf[5];
+	    length = (vlen * vdim) + (clen * cdim);
+
+	    //write header info to args buffer
+	    for(int i = 0; i < hlength; i++) {
+	        args[i] = hbuf[i];
+	    }
+
+	    //read actual data from file
+	    buf = (unsigned int*)malloc(length * sizeof(unsigned int));
+	    fread(buf, sizeof(unsigned int), length, fptr);
+	    
+	    //convert data from uint to float and split the data
+	    vbuffer->buf = (float*)malloc(vlen * vdim * sizeof(float));
+	    cbuffer->buf = (float*)malloc(clen * cdim * sizeof(float));
+	    for(int i = 0; i < vlen * vdim; i++) {
+	        vbuffer->buf[i] = ((((float)buf[i]) / __GE_MESH_PRECISION) * 2) - 1;
+	    }
+	    for(int i = 0; i < clen * cdim; i++) {
+	        cbuffer->buf[i] = (((float)buf[i + (vlen * vdim)]) / __GE_MESH_PRECISION);
+	    }
+	    
+	    //close file and return buffer
+	    fclose(fptr);
+	    return args;
+	}
+
 	bool gewritemeshfile(const char* file, const char* texturepath, unsigned int vertexmode,
 	    unsigned int drawmode, unsigned int vlen, unsigned int vdim, 
 	    unsigned int tlen, unsigned int tdim, geBufferf inbuffer) {

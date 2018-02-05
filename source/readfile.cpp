@@ -7,6 +7,7 @@
 #define __GE_MESH_MODE_TRIANGLE 4               //0000 0002
 #define __GE_MESH_TEXTURE_ENABLE 2147483648     //8000 0000
 #define __GE_MESH_TEXTURE_DISABLE 0             //0000 0000
+#define __GE_MESH_FLOAT_RANGE 2                 //float range from -2 to +2
 #define __GE_MESH_PRECISION 2147483648          //8000 0000
                                                 //2 ^ (8 * sizeof(unsigned int))
 #define __GE_MESH_HEADER_SIZE 6                 //size of the header in the file
@@ -50,72 +51,94 @@ char* readfile(const char *file) {
     return buf;
 }
 
-unsigned int *gereadmeshfile(const char *file, geBufferf* vbuffer, geBufferf* cbuffer) {
-    //variables
-    FILE *fptr;
-    unsigned int *buf;
-    float *bufout;
-    long flength;
-    long length;
-    unsigned int *args;
-    args = (unsigned int*)malloc(6 * sizeof(unsigned int));
+int gereadmeshfile(const char* filepath, unsigned int& vmode, unsigned int& cmode,
+    unsigned int& vlen, unsigned int& vdim, unsigned int& clen, unsigned int& cdim, 
+    geBufferui* indexbuffer, geBufferf* vertexdata, geBufferf* colordata) {
 
-    //header variables
-    unsigned int hlength = 6;
-    unsigned int mode;
-    unsigned int vlen;
-    unsigned int clen;
-    unsigned int vdim;
-    unsigned int cdim;
-    unsigned int *hbuf;
+    //create variables
+    FILE* fptr;
+    geBufferui filebuf;
+    geBufferui headbuf;
+    geBufferf floatbuf;
+    unsigned int totallength;
+    unsigned int indexbuffersize;
+    unsigned int vertexbuffersize;
+    unsigned int colorbuffersize;
+    bool textureenabled;
+    bool indexenabled;
 
     //open file
-    fptr = fopen(file, "rb");
-    if (!fptr) {
-        return NULL;
+    printf("Loading file: \"%s\"... ", filepath);
+    fptr = fopen(filepath, "rb");
+    if(fptr == NULL) {
+        printf("Fail!\n");
+        printf("File couldn't be opened!\n");
+        return 1;
     }
-    fseek(fptr, 0, SEEK_END); 
-    flength = ftell(fptr);
 
-    //read header
+    //allocate header buffer and read header
+    headbuf.buf = (unsigned int*)malloc(sizeof(unsigned int) * __GE_MESH_HEADER_SIZE);
     fseek(fptr, 0, SEEK_SET);
-    hbuf = (unsigned int*)malloc(hlength * sizeof(unsigned int));
-    fread(hbuf, sizeof(unsigned int), hlength, fptr);
-    hlength = hbuf[0];
-    mode = hbuf[1];
-    vlen = hbuf[2];
-    vdim = hbuf[3];
-    clen = hbuf[4];
-    cdim = hbuf[5];
-    length = (vlen * vdim) + (clen * cdim);
+    fread(headbuf.buf, sizeof(unsigned int), __GE_MESH_HEADER_SIZE, fptr);
+    vmode = headbuf.buf[0];
+    cmode = headbuf.buf[1];
+    vlen = headbuf.buf[2];
+    vdim = headbuf.buf[3];
+    clen = headbuf.buf[4];
+    cdim = headbuf.buf[5];
+    vertexbuffersize = vlen * vdim;
+    colorbuffersize = clen * cdim;
 
-    //write header info to args buffer
-    for(int i = 0; i < hlength; i++) {
-        args[i] = hbuf[i];
+    //get file length and compare
+    if(vmode >= __GE_MESH_TEXTURE_ENABLE) {
+        textureenabled = true;
+    } if (textureenabled) {
+        indexbuffersize = vmode - __GE_MESH_TEXTURE_ENABLE;
+    } else {
+        indexbuffersize = vmode - __GE_MESH_TEXTURE_DISABLE;
+    } if(indexbuffersize != 0) {
+        indexenabled = true;
+    } 
+    totallength = (indexbuffersize) + (vertexbuffersize) + (colorbuffersize);
+    fseek(fptr, 0, SEEK_END);
+    // if((long unsigned int)ftell(fptr) == (long unsigned int)((long unsigned int)totallength + (long unsigned int)__GE_MESH_HEADER_SIZE)) {
+    //     printf("Fail! File is corrupt!\n");
+    //     printf("File pointer: %d; %d\n", (long unsigned int)(ftell(fptr) / sizeof(unsigned int)), (long unsigned int)(totallength + __GE_MESH_HEADER_SIZE));
+    //     //return 2;
+    // }
+
+    //read data
+    fseek(fptr, 0, SEEK_SET);
+    filebuf.buf = (unsigned int*)malloc(sizeof(unsigned int) * totallength);
+    fread(filebuf.buf, sizeof(unsigned int), totallength, fptr);
+
+    //convert to float and split data up
+    floatbuf.buf = (float*)malloc(sizeof(float) * totallength);
+    indexbuffer->buf = (unsigned int*)malloc(sizeof(unsigned int) * indexbuffersize);
+    vertexdata->buf = (float*)malloc(sizeof(float) * vertexbuffersize);
+    colordata->buf = (float*)malloc(sizeof(float) * colorbuffersize);
+    for(int i = 0; i < totallength; i++) {
+        floatbuf.buf[i] = (((float)filebuf.buf[i] / __GE_MESH_PRECISION) * 2)
+            - __GE_MESH_FLOAT_RANGE;
+    } for (int i = 0; i < indexbuffersize; i++) {
+        indexbuffer->buf[i] = filebuf.buf[i];
+    } for (int i = 0; i < vertexbuffersize; i++) {
+        vertexdata->buf[i] = floatbuf.buf[i + indexbuffersize];
+    } for (int i = 0; i < colorbuffersize; i++) {
+        colordata->buf[i] = floatbuf.buf[i + indexbuffersize + vertexbuffersize];
     }
 
-    //read actual data from file
-    buf = (unsigned int*)malloc(length * sizeof(unsigned int));
-    fread(buf, sizeof(unsigned int), length, fptr);
-    
-    //convert data from uint to float and split the data
-    vbuffer->buf = (float*)malloc(vlen * vdim * sizeof(float));
-    cbuffer->buf = (float*)malloc(clen * cdim * sizeof(float));
-    for(int i = 0; i < vlen * vdim; i++) {
-        vbuffer->buf[i] = ((((float)buf[i]) / __GE_MESH_PRECISION) * 2) - 1;
-    }
-    for(int i = 0; i < clen * cdim; i++) {
-        cbuffer->buf[i] = (((float)buf[i + (vlen * vdim)]) / __GE_MESH_PRECISION);
-    }
-    
-    //close file and return buffer
+    //close file and return
     fclose(fptr);
-    return args;
+    printf("Done!\n");
+    printf("\tFile read correctly: \"%s\"\n", filepath);
+    return 0;
 }
+
 
 //write ----------------------------------------
 
-bool gewritemeshfile(const char* file, const char* texturepath, unsigned int vertexmode,
+bool gewritemeshfile(const char* file, unsigned int vertexmode,
     unsigned int drawmode, unsigned int vlen, unsigned int vdim, 
     unsigned int clen, unsigned int cdim, geBufferf vbufferin,
     geBufferf cbufferin, geBufferf indexbufferin) {
@@ -135,26 +158,16 @@ bool gewritemeshfile(const char* file, const char* texturepath, unsigned int ver
     //math
     if(vertexmode >= __GE_MESH_TEXTURE_ENABLE) {
         textureenabled = true;
-    }
-    if (textureenabled) {
+    } if (textureenabled) {
         indexbuffersize = vertexmode - __GE_MESH_TEXTURE_ENABLE;
-        if (vertexmode != __GE_MESH_TEXTURE_ENABLE)
-        {
-            indexbufferenabled = true;
-        }
     } else {
         indexbuffersize = vertexmode - __GE_MESH_TEXTURE_DISABLE;
-        if (vertexmode != __GE_MESH_TEXTURE_DISABLE)
-        {
-            indexbufferenabled = true;
-        }
+    } if(indexbuffersize != 0) {
+        indexbufferenabled = true;
     }
     vertexbuffersize = (vlen * vdim);
     texturebuffersize = (clen * cdim);
-    if(textureenabled) {
-        texturebuffersize = texturebuffersize * 4;
-    }
-    fulllength = vertexbuffersize + texturebuffersize + indexbuffersize;
+    fulllength = indexbuffersize + vertexbuffersize + texturebuffersize;
 
     //allocate buffer
     bufferout.buf = (float*)malloc(sizeof(float) * fulllength);
@@ -189,11 +202,19 @@ bool gewritemeshfile(const char* file, const char* texturepath, unsigned int ver
     header.buf[3] = vdim;
     header.buf[4] = clen;
     header.buf[5] = cdim;
+    fulldata.buf = (unsigned int*)malloc(sizeof(unsigned int) * fulllength);
+    filebuffer.buf = (unsigned int*)malloc(sizeof(unsigned int) * (fulllength + __GE_MESH_HEADER_SIZE));
 
     //convert data from float to unsigned int
-    for(int i = 0; i < fulllength; i++) {
+    for(int i = 0; i < indexbuffersize; i++) {
         fulldata.buf[i] = (unsigned int)floor(
-                ((bufferout.buf[i] + 1) / 2 ) * __GE_MESH_PRECISION);
+                ((bufferout.buf[i] + __GE_MESH_FLOAT_RANGE) / 2 ) * __GE_MESH_PRECISION);
+    } for(int i = indexbuffersize; i < indexbuffersize + vertexbuffersize; i++) {
+        fulldata.buf[i] = (unsigned int)floor(
+                ((bufferout.buf[i] + __GE_MESH_FLOAT_RANGE) / 2 ) * __GE_MESH_PRECISION);
+    } for(int i = indexbuffersize + vertexbuffersize; i < fulllength; i++) {
+        fulldata.buf[i] = (unsigned int)floor(
+                ((bufferout.buf[i] + __GE_MESH_FLOAT_RANGE) / 2 ) * __GE_MESH_PRECISION);
     }
 
     //merge header and data
@@ -227,8 +248,13 @@ bool gewritemeshfile(const char* file, const char* texturepath, unsigned int ver
     fclose(fptr);
 
     printf("done! \n");
-
     printf("\tSuccess!\n");
+
+    //free buffers
+    free(bufferout.buf);
+    free(header.buf);
+    free(fulldata.buf);
+    free(filebuffer.buf);
 
     return true;
 }

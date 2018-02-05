@@ -59,7 +59,6 @@ namespace geShaderCompiler {
 
 	GLuint makeShaderProgram(GLuint vID, GLuint fID) {
 		GLuint out;
-
 		out = glCreateProgram();
 		glAttachShader(out, vID);
 		glAttachShader(out, fID);
@@ -160,6 +159,10 @@ public:
 
 		//confirm initialization
 		initialized = true;
+
+		//log successful initialization
+		printf("Mesh: Initialization successful!\n");
+		glutMainLoop();
 	}
 
 	bool load(geBufferf* vdatain, unsigned int vlengthin,
@@ -195,17 +198,43 @@ public:
 	}
 
 	bool loadfile(const char* path) {
-		unsigned int *args;
+		unsigned int vmode;
+		unsigned int dmode;
+		unsigned int vlen;
+		unsigned int vdim;
+		unsigned int clen;
+		unsigned int cdim;
 		geBufferf vdata;
 		geBufferf cdata;
-		args = gereadmeshfile(path, &vdata, &cdata);
-		GLenum modeIn = args[1];
-		unsigned int vlen = args[2] * args[3];
-		unsigned int clen = args[4] * args[5];
+		geBufferui idata;
 
+		if(gereadmeshfile(path, vmode, dmode, vlen, vdim, clen, cdim, &idata, &vdata, &cdata) != 0) {
+			vdata.buf = (float*)malloc(0);
+			cdata.buf = (float*)malloc(0);
+			idata.buf = (unsigned int*)malloc(0);
 
-		load(&vdata, vlen, &cdata, clen, modeIn);
+			vertexdatasize = 0;
+			colordatasize = 0;
+			printf("\tError loading file: \"%s\"\n", path);
+			printf("\tLoader terminated.\n");
+			return false;
+		}
+		mode = dmode;
+		vertexdatasize = vlen * vdim;
+		colordatasize = clen * cdim;
 
+		vertexdata.buf = (float*)malloc(sizeof(float) * vertexdatasize);
+		colordata.buf = (float*)malloc(sizeof(float) * colordatasize);
+
+		for(int i = 0; i < vertexdatasize; i++) {
+			vertexdata.buf[i] = vdata.buf[i];
+		}
+
+		for(int i = 0; i < colordatasize; i++) {
+			colordata.buf[i] = cdata.buf[i];
+		}
+		
+		printf("\tFile loaded correctly: \"%s\"\n", path);
 		return true;
 	}
 
@@ -225,11 +254,10 @@ public:
 	}
 
 	void draw() {
-		if (!initialized || !loaded) return;
-
 		glUseProgram(shaderID);
 		glBindVertexArray(vaoID);
-		glDrawArrays(mode, 0, vertexdatasize / 2);
+		glDrawArrays(mode, 0, vertexdatasize);
+		printf("Rendered %d vertices\n", vertexdatasize);
 	}
 
 	void setViewmodelUniform(glm::mat4 view) {
@@ -256,6 +284,5 @@ void initGLUT(int argc, char** argv, const char* title, int w, int h) {
 	glutDisplayFunc(onDraw);
 	glutKeyboardFunc(onKeyboard);
 	glutMouseFunc(onMouse);
-
 	onInitEnd();
 }

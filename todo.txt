@@ -4,4 +4,10 @@ mesh:
 		spiel programmieren
 
 	WICHTIG:
-		nuin leser fir .mesh einbaun!
+		leser/schreiber lest/schreibt folsch
+
+		
+
+nebenbei: CTRL+SHIFT+P ruaft es fenster auf, mit dem du sochn einblenden/ausblenden konnsch.
+	oanfoch "view" eingeben, donn wählts automatisch des aus, mit dem du z.b es menu einblenden
+	konnsch.
